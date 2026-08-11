@@ -76,6 +76,15 @@
             android:textColor="?android:attr/colorAccent"
             android:visibility="gone" />
 
+        <TextView
+            android:id="@+id/volumeWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/volume_blocked_warning"
+            android:textColor="?android:attr/colorAccent"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/toggleButton"
             android:layout_width="match_parent"

@@ -14,7 +14,11 @@ import android.location.LocationManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import kotlin.math.roundToInt
 
 @Suppress("DEPRECATION")
@@ -23,7 +27,18 @@ class SpeedVolumeService : Service(), LocationListener {
     private lateinit var audioManager: AudioManager
     private var locationManager: LocationManager? = null
 
+    private var started = false
+    private var updatesRequested = false
+
+    private val filter = SpeedFilter()
+    private lateinit var ramp: VolumeRamp
+    private val handler = Handler(Looper.getMainLooper())
+
+    private var lastLocation: Location? = null
+    private var lastFixMs = 0L
+
     companion object {
+        private const val TAG = "SpeedVolumeService"
         private const val CHANNEL_ID = "speed_volume_channel"
         private const val NOTIFICATION_ID = 1
         const val ACTION_STOP = "com.example.speedvolume.STOP"
@@ -31,63 +46,138 @@ class SpeedVolumeService : Service(), LocationListener {
         const val PREF_MAX_SPEED = "max_speed_kmh"
         const val PREF_IDLE_VOLUME = "idle_volume"
         const val DEFAULT_MAX_SPEED = 120
+        private const val WATCHDOG_INTERVAL_MS = 15_000L
+        private const val NO_FIX_TIMEOUT_MS = 5_000L
     }
 
     override fun onCreate() {
         super.onCreate()
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        ramp = VolumeRamp(audioManager)
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            Log.i(TAG, "stop requested")
             stopSelf()
             return START_NOT_STICKY
         }
 
-        val notification = buildNotification(currentVolume())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        if (started) {
+            Log.d(TAG, "already running, ignoring duplicate start")
+            return START_STICKY
         }
+        started = true
+
+        val ok = try {
+            val notification = buildNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+            true
+        } catch (e: SecurityException) {
+            Log.w(TAG, "startForeground failed, permission lost: $e")
+            started = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (!ok) return START_NOT_STICKY
 
         ServiceState.running = true
         ServiceState.volume = currentVolume()
         ServiceState.changed()
-        startLocationUpdates()
+
+        ensureLocationUpdates()
+        ramp.start({ mapSpeedToVolume(ServiceState.speedKmh) }) { blocked ->
+            if (ServiceState.volumeBlocked != blocked) {
+                ServiceState.volumeBlocked = blocked
+                ServiceState.changed()
+            }
+        }
+        handler.post(watchdogRunnable)
+        Log.i(TAG, "service started")
         return START_STICKY
     }
 
-    private fun startLocationUpdates() {
+    private val watchdogRunnable = object : Runnable {
+        override fun run() {
+            if (!started) return
+            val lm = locationManager ?: return
+            val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            if (gpsOn != ServiceState.gpsEnabled) {
+                ServiceState.gpsEnabled = gpsOn
+                ServiceState.changed()
+                notificationManager().notify(NOTIFICATION_ID, buildNotification())
+            }
+            if (gpsOn && !updatesRequested) ensureLocationUpdates()
+
+            val noFix = lastFixMs == 0L || SystemClock.elapsedRealtime() - lastFixMs > NO_FIX_TIMEOUT_MS
+            if (noFix != !ServiceState.hasFix) {
+                ServiceState.hasFix = !noFix
+                ServiceState.changed()
+            }
+            handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
+        }
+    }
+
+    private fun ensureLocationUpdates() {
         val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         locationManager = lm
-        val gpsOk = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-        ServiceState.gpsEnabled = gpsOk
-        ServiceState.changed()
-        if (!gpsOk) return
-
+        if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            ServiceState.gpsEnabled = false
+            ServiceState.changed()
+            return
+        }
         try {
             lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
+            updatesRequested = true
+            ServiceState.gpsEnabled = true
+            ServiceState.changed()
         } catch (e: SecurityException) {
+            Log.w(TAG, "location permission lost: $e")
             ServiceState.gpsEnabled = false
             ServiceState.changed()
         }
     }
 
     override fun onLocationChanged(location: Location) {
-        val speedKmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
-        val volume = mapSpeedToVolume(speedKmh)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
+        val now = SystemClock.elapsedRealtime()
+        val derivedKmh = derivedSpeedKmh(location, now)
+        lastLocation = location
+        lastFixMs = now
 
-        ServiceState.speedKmh = speedKmh
-        ServiceState.volume = volume
+        val rawKmh = if (location.hasSpeed()) location.speed * 3.6f else Float.NaN
+        val confident = location.hasSpeed() && location.accuracy > 0f && location.accuracy <= 25f
+
+        val filtered = filter.process(rawKmh, derivedKmh, confident, now)
+        if (filtered.isNaN().not()) {
+            ServiceState.speedKmh = filtered
+        }
+        if (!ServiceState.hasFix) {
+            ServiceState.hasFix = true
+        }
         ServiceState.changed()
-
-        notificationManager().notify(NOTIFICATION_ID, buildNotification(volume))
+        notificationManager().notify(NOTIFICATION_ID, buildNotification())
     }
 
+    private fun derivedSpeedKmh(location: Location, nowMs: Long): Float {
+        val prev = lastLocation ?: return Float.NaN
+        if (prev.latitude == location.latitude && prev.longitude == location.longitude) return Float.NaN
+        val dtSec = (nowMs - lastFixMs) / 1000f
+        if (dtSec !in 0.5f..10f) return Float.NaN
+        val distanceM = prev.distanceTo(location)
+        return distanceM / dtSec * 3.6f
+    }
+
+    /**
+     * Maps filtered speed to a target volume level.
+     * NaN speed (no fix / rejected sample) -> hold the current volume.
+     */
     private fun mapSpeedToVolume(speedKmh: Float): Int {
+        if (speedKmh.isNaN() || !ServiceState.hasFix) return currentVolume()
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val maxSpeed = prefs.getInt(PREF_MAX_SPEED, DEFAULT_MAX_SPEED).coerceAtLeast(10).toFloat()
@@ -121,7 +211,7 @@ class SpeedVolumeService : Service(), LocationListener {
         notificationManager().createNotificationChannel(channel)
     }
 
-    private fun buildNotification(volume: Int): Notification {
+    private fun buildNotification(): Notification {
         val openIntent = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -132,13 +222,13 @@ class SpeedVolumeService : Service(), LocationListener {
             Intent(this, SpeedVolumeService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val speedText = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
+            ServiceState.speedKmh.roundToInt().toString() else getString(R.string.no_fix)
 
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_speed)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(
-                getString(R.string.notification_body, ServiceState.speedKmh.roundToInt(), volume)
-            )
+            .setContentText(getString(R.string.notification_body, speedText, ServiceState.volume))
             .setContentIntent(openIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -147,22 +237,32 @@ class SpeedVolumeService : Service(), LocationListener {
     }
 
     override fun onDestroy() {
+        started = false
+        updatesRequested = false
+        handler.removeCallbacks(watchdogRunnable)
+        ramp.stop()
         locationManager?.removeUpdates(this)
         ServiceState.running = false
+        ServiceState.hasFix = false
         ServiceState.changed()
+        Log.i(TAG, "service stopped")
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onProviderEnabled(provider: String) {
-        ServiceState.gpsEnabled = true
-        ServiceState.changed()
+        Log.i(TAG, "provider enabled: $provider")
+        ensureLocationUpdates()
     }
 
     override fun onProviderDisabled(provider: String) {
-        ServiceState.gpsEnabled = false
-        ServiceState.changed()
+        Log.i(TAG, "provider disabled: $provider")
+        if (provider == LocationManager.GPS_PROVIDER) {
+            updatesRequested = false
+            ServiceState.gpsEnabled = false
+            ServiceState.changed()
+        }
     }
 
     override fun onStatusChanged(provider: String, status: Int, extras: Bundle) = Unit

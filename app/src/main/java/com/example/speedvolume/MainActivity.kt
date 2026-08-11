@@ -19,6 +19,7 @@ class MainActivity : Activity() {
     private lateinit var volumeValue: TextView
     private lateinit var maxVolumeText: TextView
     private lateinit var gpsWarning: TextView
+    private lateinit var volumeWarning: TextView
     private lateinit var toggleButton: Button
     private lateinit var speedForMaxValue: TextView
     private lateinit var idleVolumeValue: TextView
@@ -38,6 +39,7 @@ class MainActivity : Activity() {
         volumeValue = findViewById(R.id.volumeValue)
         maxVolumeText = findViewById(R.id.maxVolumeText)
         gpsWarning = findViewById(R.id.gpsWarning)
+        volumeWarning = findViewById(R.id.volumeWarning)
         toggleButton = findViewById(R.id.toggleButton)
         speedForMaxValue = findViewById(R.id.speedForMaxValue)
         idleVolumeValue = findViewById(R.id.idleVolumeValue)
@@ -97,16 +99,21 @@ class MainActivity : Activity() {
         if (ServiceState.running) {
             statusText.text = getString(R.string.status_running)
             toggleButton.setText(R.string.stop)
-            speedValue.text = getString(R.string.speed_value_fmt, ServiceState.speedKmh.toInt())
+            speedValue.text = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
+                getString(R.string.speed_value_fmt, ServiceState.speedKmh.toInt())
+            else getString(R.string.no_fix)
             volumeValue.text = getString(R.string.volume_value_fmt, ServiceState.volume)
             gpsWarning.visibility = if (ServiceState.gpsEnabled)
                 android.view.View.GONE else android.view.View.VISIBLE
+            volumeWarning.visibility = if (ServiceState.volumeBlocked)
+                android.view.View.VISIBLE else android.view.View.GONE
         } else {
             statusText.text = getString(R.string.status_stopped)
             toggleButton.setText(R.string.start)
-            speedValue.text = getString(R.string.speed_value_fmt, 0)
+            speedValue.text = getString(R.string.no_fix)
             volumeValue.text = getString(R.string.volume_value_fmt, currentVolume())
             gpsWarning.visibility = android.view.View.GONE
+            volumeWarning.visibility = android.view.View.GONE
         }
     }
 
@@ -118,12 +125,30 @@ class MainActivity : Activity() {
             stopService(Intent(this, SpeedVolumeService::class.java))
             refreshUi()
         } else {
+            maybeAskIgnoreBatteryOptimizations()
             val needed = permissionList()
             if (needed.isEmpty()) {
                 startVolumeService()
             } else {
                 requestPermissions(needed.toTypedArray(), REQUEST_PERMISSIONS)
             }
+        }
+    }
+
+    private fun maybeAskIgnoreBatteryOptimizations() {
+        if (prefs.getBoolean("battery_optimization_asked", false)) return
+        prefs.edit().putBoolean("battery_optimization_asked", true).apply()
+        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        try {
+            startActivity(
+                Intent(
+                    android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:$packageName")
+                )
+            )
+        } catch (e: Exception) {
+            // Device policy may forbid it; harmless.
         }
     }
 

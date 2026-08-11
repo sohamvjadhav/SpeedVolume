@@ -27,5 +27,7 @@
 
     <string name="notification_channel">Speed Volume service</string>
     <string name="notification_title">Speed Volume active</string>
-    <string name="notification_body">%1$d km/h — volume level %2$d</string>
+    <string name="notification_body">%1$s km/h — volume level %2$d</string>
+    <string name="no_fix">--</string>
+    <string name="volume_blocked_warning">Volume changes appear to be blocked by the system — check your phone\'s volume settings</string>
 </resources>
