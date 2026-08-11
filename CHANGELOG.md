@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.1 (2026-08-11)
+- QS tile: long-press now opens the app instead of App Info
+  (ACTION_QS_TILE_PREFERENCES on MainActivity, per platform docs)
+
+## v1.3 (2026-08-11)
+- Fix: content no longer renders under the status bar (edge-to-edge insets)
+- Fix: duplicate "km/h" next to the big speed number
+- Quick Settings tile: tap to start/stop the service, shows live speed + volume
+  subtitle, active/inactive state and icons (add via QS edit menu)
+
 ## v1.2 (2026-08-11)
 - Redesigned minimal UI:
   - card-based layout with hero speed display (large accent number)

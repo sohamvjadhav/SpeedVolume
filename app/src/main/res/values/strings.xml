@@ -11,7 +11,7 @@
     <string name="status_no_gps">GPS disabled — enable it for speed updates</string>
 
     <string name="speed_label">Current speed</string>
-    <string name="speed_value_fmt">%1$d km/h</string>
+    <string name="speed_value_fmt">%1$d</string>
 
     <string name="volume_label">Media volume</string>
     <string name="volume_value_fmt">Level %1$d / %2$d</string>
@@ -37,4 +37,10 @@
     <string name="notification_body">%1$s km/h — volume level %2$d</string>
     <string name="no_fix">--</string>
     <string name="volume_blocked_warning">Volume changes appear to be blocked by the system — check your phone\'s volume settings</string>
+
+    <string name="tile_label">Speed Volume</string>
+    <string name="tile_off">Off</string>
+    <string name="tile_running">%1$s km/h · vol %2$d</string>
+    <string name="tile_permission_hint">Open app &amp; grant location</string>
+    <string name="tile_open_app_hint">Open app to start</string>
 </resources>

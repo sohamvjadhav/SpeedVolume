@@ -1,5 +1,7 @@
 package com.example.speedvolume
 
+import java.util.concurrent.CopyOnWriteArrayList
+
 object ServiceState {
     @Volatile var running: Boolean = false
     @Volatile var speedKmh: Float = Float.NaN
@@ -8,9 +10,17 @@ object ServiceState {
     @Volatile var hasFix: Boolean = false
     @Volatile var volumeBlocked: Boolean = false
 
-    var listener: (() -> Unit)? = null
+    private val listeners = CopyOnWriteArrayList<() -> Unit>()
+
+    fun addListener(listener: () -> Unit) {
+        listeners.addIfAbsent(listener)
+    }
+
+    fun removeListener(listener: () -> Unit) {
+        listeners.remove(listener)
+    }
 
     fun changed() {
-        listener?.invoke()
+        listeners.forEach { it() }
     }
 }

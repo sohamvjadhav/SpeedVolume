@@ -9,6 +9,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
@@ -46,6 +47,8 @@ class MainActivity : Activity() {
         gpsWarning = findViewById(R.id.gpsWarning)
         volumeWarning = findViewById(R.id.volumeWarning)
         toggleButton = findViewById(R.id.toggleButton)
+
+        applySystemBarsPadding(findViewById(R.id.rootScroll))
         speedForMaxValue = findViewById(R.id.speedForMaxValue)
         idleVolumeValue = findViewById(R.id.idleVolumeValue)
 
@@ -54,13 +57,41 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        ServiceState.listener = { runOnUiThread { refreshUi() } }
+        ServiceState.addListener(uiListener)
         refreshUi()
     }
 
     override fun onStop() {
-        ServiceState.listener = null
+        ServiceState.removeListener(uiListener)
         super.onStop()
+    }
+
+    private val uiListener = { runOnUiThread { refreshUi() } }
+
+    /**
+     * Android 15+ forces edge-to-edge (transparent status bar), so content
+     * would otherwise render underneath it. Pad the scroll root by the
+     * system-bar insets on top of its own layout padding.
+     */
+    private fun applySystemBarsPadding(scroll: android.widget.ScrollView) {
+        val baseTop = scroll.paddingTop
+        val baseBottom = scroll.paddingBottom
+        scroll.setOnApplyWindowInsetsListener { v, insets ->
+            val top: Int
+            val bottom: Int
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars())
+                top = bars.top
+                bottom = bars.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION")
+                bottom = insets.systemWindowInsetBottom
+            }
+            v.setPadding(v.paddingLeft, baseTop + top, v.paddingRight, baseBottom + bottom)
+            insets
+        }
     }
 
     private fun setupUi() {
