@@ -41,6 +41,7 @@
     <string name="tile_label">Speed Volume</string>
     <string name="tile_off">Off</string>
     <string name="tile_running">%1$s km/h · vol %2$d</string>
-    <string name="tile_permission_hint">Open app &amp; grant location</string>
+    <string name="tile_starting">Starting…</string>
+    <string name="tile_permission_hint">Open app &amp; allow location always</string>
     <string name="tile_open_app_hint">Open app to start</string>
 </resources>

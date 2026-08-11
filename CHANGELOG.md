@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4 (2026-08-11)
+- Fix: QS tile now starts the service instantly from the background
+  - Added ACCESS_BACKGROUND_LOCATION: the system refuses to start a location
+    foreground service from the background without it, which made tile presses
+    appear dead (or only work while the app was recently open)
+  - App now prompts for "Allow all the time" after location is granted
+  - Tile gives immediate "Starting…" feedback on press
+- Version bump: 1.4 (5)
+
 ## v1.3.1 (2026-08-11)
 - QS tile: long-press now opens the app instead of App Info
   (ACTION_QS_TILE_PREFERENCES on MainActivity, per platform docs)

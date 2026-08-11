@@ -35,11 +35,13 @@ class SpeedVolumeTile : TileService() {
             tile?.updateTile()
             return
         }
+        tile?.subtitle = getString(R.string.tile_starting)
+        tile?.updateTile()
         try {
             startForegroundService(Intent(this, SpeedVolumeService::class.java))
         } catch (e: Exception) {
             Log.w("SpeedVolumeTile", "foreground start blocked: $e")
-            tile?.subtitle = getString(R.string.tile_open_app_hint)
+            tile?.subtitle = getString(R.string.tile_permission_hint)
             tile?.updateTile()
         }
     }

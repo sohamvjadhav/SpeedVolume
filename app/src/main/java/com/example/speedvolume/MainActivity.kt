@@ -208,16 +208,23 @@ class MainActivity : Activity() {
     }
 
     private fun permissionList(): List<String> {
-        val needed = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val needed = mutableListOf<String>()
+        if (!fineGranted) needed += Manifest.permission.ACCESS_FINE_LOCATION
+        if (fineGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            needed += Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             needed += Manifest.permission.POST_NOTIFICATIONS
         }
-        return needed.filter {
-            checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
-        }
+        return needed
     }
 
     private fun startVolumeService() {
