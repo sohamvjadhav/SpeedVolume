@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.2 (2026-08-11)
+- Redesigned minimal UI:
+  - card-based layout with hero speed display (large accent number)
+  - header with live status pill (green/gray dot + Running/Stopped)
+  - GPS fix state row (locked / looking for fix…)
+  - custom-tinted seekbars and primary action button
+  - dark theme (follows system night mode) — verified on device
+- No functional changes; speed/volume logic identical to v1.1
+
 ## v1.1 (2026-08-11)
 - Smooth volume changes: volume now ramps one level at a time (5 levels/s)
   instead of jumping, so speed changes sound continuous instead of stepwise

@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1A237E</color>
+
+    <color name="bg">#F4F5F7</color>
+    <color name="card">#FFFFFF</color>
+    <color name="text_primary">#1A1C20</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="accent">#3949AB</color>
+    <color name="track">#E3E5E9</color>
+    <color name="chip_bg">#ECEFF4</color>
+    <color name="warning">#D32F2F</color>
+    <color name="dot_active">#2E7D32</color>
+    <color name="dot_idle">#9AA0A6</color>
+    <color name="white">#FFFFFF</color>
 </resources>

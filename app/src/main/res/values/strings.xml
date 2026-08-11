@@ -14,8 +14,15 @@
     <string name="speed_value_fmt">%1$d km/h</string>
 
     <string name="volume_label">Media volume</string>
-    <string name="volume_value_fmt">Level %1$d</string>
-    <string name="max_volume_fmt">Device max volume: %1$d</string>
+    <string name="volume_value_fmt">Level %1$d / %2$d</string>
+
+    <string name="current_speed">CURRENT SPEED</string>
+    <string name="unit_kmh">km/h</string>
+    <string name="media_volume">MEDIA VOLUME</string>
+    <string name="volume_mapping">VOLUME MAPPING</string>
+    <string name="gps_label">GPS</string>
+    <string name="gps_locked">fix locked</string>
+    <string name="gps_looking">looking for fix…</string>
 
     <string name="speed_for_max">Full volume above speed</string>
     <string name="speed_for_max_value_fmt">%1$d km/h</string>

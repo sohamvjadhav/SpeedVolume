@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
@@ -15,9 +16,11 @@ import android.widget.TextView
 class MainActivity : Activity() {
 
     private lateinit var statusText: TextView
+    private lateinit var statusDot: View
     private lateinit var speedValue: TextView
     private lateinit var volumeValue: TextView
-    private lateinit var maxVolumeText: TextView
+    private lateinit var gpsRow: View
+    private lateinit var fixState: TextView
     private lateinit var gpsWarning: TextView
     private lateinit var volumeWarning: TextView
     private lateinit var toggleButton: Button
@@ -35,9 +38,11 @@ class MainActivity : Activity() {
         audioManager = getSystemService(AudioManager::class.java)
 
         statusText = findViewById(R.id.statusText)
+        statusDot = findViewById(R.id.statusDot)
         speedValue = findViewById(R.id.speedValue)
         volumeValue = findViewById(R.id.volumeValue)
-        maxVolumeText = findViewById(R.id.maxVolumeText)
+        gpsRow = findViewById(R.id.gpsRow)
+        fixState = findViewById(R.id.fixState)
         gpsWarning = findViewById(R.id.gpsWarning)
         volumeWarning = findViewById(R.id.volumeWarning)
         toggleButton = findViewById(R.id.toggleButton)
@@ -60,7 +65,6 @@ class MainActivity : Activity() {
 
     private fun setupUi() {
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        maxVolumeText.text = getString(R.string.max_volume_fmt, maxVolume)
 
         val speedSeek = findViewById<SeekBar>(R.id.speedForMaxSeek)
         speedSeek.progress = prefs.getInt(SpeedVolumeService.PREF_MAX_SPEED, SpeedVolumeService.DEFAULT_MAX_SPEED) - 20
@@ -96,22 +100,30 @@ class MainActivity : Activity() {
     }
 
     private fun refreshUi() {
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         if (ServiceState.running) {
             statusText.text = getString(R.string.status_running)
+            statusDot.background = getDrawable(R.drawable.dot_active)
             toggleButton.setText(R.string.stop)
             speedValue.text = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
                 getString(R.string.speed_value_fmt, ServiceState.speedKmh.toInt())
             else getString(R.string.no_fix)
-            volumeValue.text = getString(R.string.volume_value_fmt, ServiceState.volume)
+            volumeValue.text = getString(R.string.volume_value_fmt, ServiceState.volume, maxVolume)
+            gpsRow.visibility = android.view.View.VISIBLE
+            fixState.text = getString(
+                if (ServiceState.hasFix) R.string.gps_locked else R.string.gps_looking
+            )
             gpsWarning.visibility = if (ServiceState.gpsEnabled)
                 android.view.View.GONE else android.view.View.VISIBLE
             volumeWarning.visibility = if (ServiceState.volumeBlocked)
                 android.view.View.VISIBLE else android.view.View.GONE
         } else {
             statusText.text = getString(R.string.status_stopped)
+            statusDot.background = getDrawable(R.drawable.dot_idle)
             toggleButton.setText(R.string.start)
             speedValue.text = getString(R.string.no_fix)
-            volumeValue.text = getString(R.string.volume_value_fmt, currentVolume())
+            volumeValue.text = getString(R.string.volume_value_fmt, currentVolume(), maxVolume)
+            gpsRow.visibility = android.view.View.GONE
             gpsWarning.visibility = android.view.View.GONE
             volumeWarning.visibility = android.view.View.GONE
         }

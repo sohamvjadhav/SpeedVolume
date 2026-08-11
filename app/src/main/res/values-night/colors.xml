@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#121417</color>
+    <color name="card">#1E2126</color>
+    <color name="text_primary">#ECEDEF</color>
+    <color name="text_secondary">#9AA0A8</color>
+    <color name="accent">#7986CB</color>
+    <color name="track">#32373F</color>
+    <color name="chip_bg">#2A2E35</color>
+    <color name="warning">#EF5350</color>
+</resources>
