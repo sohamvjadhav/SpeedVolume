@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Speed Volume</string>
+
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+
+    <string name="status_stopped">Stopped</string>
+    <string name="status_running">Running — volume follows speed</string>
+    <string name="status_permission_denied">Location permission denied</string>
+    <string name="status_no_gps">GPS disabled — enable it for speed updates</string>
+
+    <string name="speed_label">Current speed</string>
+    <string name="speed_value_fmt">%1$d km/h</string>
+
+    <string name="volume_label">Media volume</string>
+    <string name="volume_value_fmt">Level %1$d</string>
+    <string name="max_volume_fmt">Device max volume: %1$d</string>
+
+    <string name="speed_for_max">Full volume above speed</string>
+    <string name="speed_for_max_value_fmt">%1$d km/h</string>
+
+    <string name="idle_volume">Standstill volume level</string>
+    <string name="idle_volume_value_fmt">%1$d</string>
+
+    <string name="note">Volume scales linearly between the standstill level and max volume as your GPS speed climbs.</string>
+
+    <string name="notification_channel">Speed Volume service</string>
+    <string name="notification_title">Speed Volume active</string>
+    <string name="notification_body">%1$d km/h — volume level %2$d</string>
+</resources>
