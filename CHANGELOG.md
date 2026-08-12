@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased (2026-08-12)
+- Reliability: keep the foreground-service watchdog alive when location setup
+  fails and re-register stale GPS callbacks after screen lock or Doze.
+- Reliability: re-check location permission during recovery and report failed
+  service starts instead of leaving the UI apparently active or idle.
+- Reliability: persist the user's enabled state across sticky service restarts,
+  while an explicit Stop prevents the service from returning.
+- Permissions: request foreground location, background location, and
+  notifications as separate Android permission steps.
+- Engine: reject non-finite speed samples and reset filter history when
+  switching between GPS and motion-sensor sources.
+- UI/tile: keep live volume state synchronized and guard Quick Settings
+  subtitles on Android versions that do not support them.
+- Tests: add local unit coverage for GPS filtering and motion fallback expiry.
+- Documentation: document locked-screen setup, OEM battery restrictions, and
+  known GPS/sensor limitations in README.md.
+
 ## v1.7 (2026-08-12)
 - Fix: ~2 s delay in volume response
   - Volume ramp now approaches the target exponentially (halves the gap every
