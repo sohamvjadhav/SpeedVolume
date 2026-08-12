@@ -13,7 +13,7 @@ import kotlin.math.min
  *    (a car's maximum plausible acceleration) is discarded
  *  - cross-check: when the fix is low-confidence, a sample that wildly
  *    disagrees with displacement-derived speed is discarded
- *  - median-of-5: removes isolated outliers while keeping sharp real changes
+ *  - median-of-3: removes isolated outliers while keeping sharp real changes
  *  - adaptive EMA: aggressive smoothing on low-confidence samples, light
  *    smoothing on good fixes, so real speed changes stay responsive
  */
@@ -34,8 +34,8 @@ class SpeedFilter(private val maxAccelMs2: Float = 12f) {
      */
     fun process(rawKmh: Float, derivedKmh: Float, confident: Boolean, nowMs: Long): Float {
         val sample = when {
-            !rawKmh.isNaN() -> if (rawKmh < 3f) 0f else rawKmh
-            !derivedKmh.isNaN() -> derivedKmh
+            rawKmh.isFinite() -> rawKmh.coerceAtLeast(0f).let { if (it < 3f) 0f else it }
+            derivedKmh.isFinite() -> derivedKmh.coerceAtLeast(0f)
             else -> return Float.NaN
         }
 
@@ -66,5 +66,14 @@ class SpeedFilter(private val maxAccelMs2: Float = 12f) {
         prevValidKmh = sample
         lastSampleMs = nowMs
         return smoothed
+    }
+
+    /** Clears history when switching between GPS and motion-derived sources. */
+    fun reset() {
+        window.clear()
+        smoothed = 0f
+        initialized = false
+        prevValidKmh = -1f
+        lastSampleMs = 0L
     }
 }

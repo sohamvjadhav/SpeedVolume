@@ -1,174 +1,195 @@
 # Speed Volume
 
 [![License](https://img.shields.io/github/license/sohamvjadhav/SpeedVolume)](https://github.com/sohamvjadhav/SpeedVolume/blob/main/LICENSE)
-[![Release](https://img.shields.io/github/v/release/sohamvjadhav/SpeedVolume)](https://github.com/sohamvjadhav/SpeedVolume/releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/sohamvjadhav/SpeedVolume/build.yml)](https://github.com/sohamvjadhav/SpeedVolume/actions)
-[![Platform](https://img.shields.io/badge/Android-8.0%2B-orange.svg)](https://developer.android.com/studio)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-green.svg)](https://developer.android.com/)
 [![Min SDK](https://img.shields.io/badge/minSdk-26-brightgreen)](https://developer.android.com/studio)
-[![Target SDK](https://img.shields.io/badge/targetSdk-36-blue)](https://developer.android.com/studio)
-[![Kotlin](https://img.shields.io/badge/Kotlin-✓-purple)](https://kotlinlang.org)
 
-Android app that reads the device's GPS speed and automatically adjusts media
-volume to match — the faster you go, the louder the music. Built for the car
-(and for runs, thanks to motion-sensor fallback).
+Speed Volume is an Android app that adjusts `STREAM_MUSIC` volume from the
+device's current speed. It is designed for driving and supports a walking or
+running fallback when GPS temporarily has no fresh fix.
 
-- Standing still → low "idle" volume
-- 80 km/h → max volume
-- Everything between scales on a sqrt curve (fast, audible response at
-  everyday speeds)
-- Works as a Quick Settings tile: tap to start/stop while driving, no
-  screen-peeking required
+The app runs as a location foreground service. It is not a replacement for a
+vehicle's safety systems, and it cannot make GPS work indoors, inside tunnels,
+or when the phone manufacturer stops background execution.
 
-## Features
+## What it does
 
-- **GPS-driven volume**: foreground service polls GPS (500 ms) and maps
-  filtered speed to media volume
-- **Motion-sensor fusion (v1.6)**: when GPS has no fix (indoor runs, tunnels,
-  cold start), speed is estimated from step cadence × stride, so the
-  speedometer and volume never sit at 0 while you're moving
-- **Self-calibrating stride**: every GPS-verified walk/run re-measures your
-  real stride length, so the sensor estimate converges on your actual gait
-  (±10–15% accuracy, improving with use)
-- **Accuracy-first filter pipeline**: deadband + spike rejection + median + EMA
-  keep the raw GPS noise out while preserving real speed changes
-- **Instant response (v1.7)**: volume approaches its target exponentially
-  (~250 ms settle), speed changes pass through in 1–2 s
-- **Quick Settings tile**: tap to start/stop, shows live speed + volume
-  subtitle; long-press opens the app
-- **Battery & OEM hardened**: START_STICKY restarts, 15 s watchdog re-registers
-  location, battery-optimization whitelist prompt, volume-block detection
-  (ColorOS/MIUI quirk) with an explicit UI warning
-- **Zero dependencies**: pure Android platform APIs — no AndroidX, no Material,
-  no third-party libraries
+- Maps filtered speed to media volume with a responsive square-root curve.
+- Uses GPS as the authoritative source for vehicle speed.
+- Falls back to step cadence and a calibrated stride for walking/running when
+  GPS has been stale for more than five seconds.
+- Smooths noisy GPS using a standstill deadband, acceleration rejection,
+  displacement cross-checking, median filtering, and adaptive EMA smoothing.
+- Moves volume toward its target every 50 ms and detects OEMs that silently
+  refuse volume changes.
+- Provides an ongoing notification, a Quick Settings tile, and a live status
+  screen.
+- Recovers location requests after screen lock or Doze when callbacks become
+  stale, subject to device and OEM policy.
 
-## How it works
+## How the engine works
 
-```
-GPS fix (500 ms) ──▶ filter pipeline ──▶ filtered speed ──▶ sqrt map ──▶ target level
-                          │                                        │
-step sensor (no fix) ─────┘                                        ▼
-                                                    VolumeRamp: exponential approach
-                                                       (halves gap every 50 ms)
+```text
+GPS fixes (500 ms) ──┐
+                     ├─ source-aware filter ── speed ── curve ── target volume
+step detector ───────┘                              └─ exponential volume ramp
 ```
 
-1. `SpeedVolumeService` (a foreground service with
-   `FOREGROUND_SERVICE_TYPE_LOCATION`) listens to `GPS_PROVIDER`.
-2. `SpeedFilter` cleans the raw speed: samples < 3 km/h are deadbanded to 0,
-   implausible accelerations (> 12 m/s²) are rejected, weak fixes are
-   cross-checked against displacement-derived speed, then a median-of-3 and
-   adaptive EMA smooth it (α 0.6 confident / 0.35 weak).
-3. When no fix is fresh (`> 5 s`), step-detector cadence × calibrated stride
-   (capped at 18 km/h) feeds the same filter, and the UI marks the source as
-   "motion sensors".
-4. The filtered speed maps to a target level via a sqrt curve between
-   **standstill volume** (default 15% of max) and **full-volume speed**
-   (default 80 km/h) — both configurable live in the app.
-5. `VolumeRamp` moves the stream toward the target exponentially (halves the
-   gap every 50 ms): large changes settle in ~250 ms, small corrections are
-   inaudible. It also detects when the OEM silently refuses changes and
-   flags a warning.
+1. `SpeedVolumeService` promotes itself to a location foreground service and
+   requests `GPS_PROVIDER` updates every 500 ms.
+2. `SpeedFilter` treats speeds below 3 km/h as stationary, rejects samples
+   implying more than 12 m/s² acceleration, cross-checks weak fixes against
+   displacement speed, then applies median-of-3 and adaptive EMA smoothing.
+3. If the last GPS fix is older than five seconds, `SensorMotion` estimates
+   walking/running speed from recent step cadence. The estimate is capped at
+   18 km/h and is not intended to replace GPS for driving.
+4. GPS-verified walking or running calibrates stride length gradually. The
+   filter history is reset whenever the source changes, so stale GPS speed does
+   not bleed into a motion estimate.
+5. Speed is mapped between the configured standstill volume and full volume.
+   The default full-volume threshold is 80 km/h; the default standstill level
+   is approximately 15% of the media stream's maximum.
+6. `VolumeRamp` approaches the target exponentially and reports the actual
+   stream level back to the activity, tile, and notification.
 
-## Setup
+## Reliable setup for a locked screen
 
-### Permissions
+Android and phone manufacturers restrict background work. Complete all of the
+following on the test device:
 
-| Permission | Why |
+1. Open Speed Volume and grant precise location.
+2. Grant **Allow all the time** location access. This app requires it for its
+   Quick Settings and locked-screen workflow.
+3. Grant notifications on Android 13 and newer. The ongoing notification is
+   how Android recognizes and exposes the foreground service.
+4. Set the app's battery usage to **Unrestricted** or disable battery
+   optimization for it.
+5. Enable the manufacturer's **Auto-start**, **Allow background activity**, or
+   equivalent setting. Common battery killers include ColorOS, MIUI, EMUI,
+   One UI power saving, and aggressive third-party task managers.
+6. Start tracking once while the app is visibly open. Confirm that the
+   ongoing **Speed Volume active** notification appears before locking the
+   phone.
+7. Lock the phone and test in an open-sky location. GPS speed needs a usable
+   satellite fix; the step fallback is for pedestrians, not vehicles.
+
+Android's foreground-service and background-location rules change across API
+levels. See the official guidance for [foreground-service background starts](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
+and [background location](https://developer.android.com/develop/sensors-and-location/location/permissions/background).
+
+If the service still stops only on one phone model, that is usually an OEM
+power-management policy. The app can re-register its location request, but it
+cannot override a manufacturer force-stop or task-killer policy.
+
+## Permissions and device access
+
+| Permission or setting | Purpose |
 |---|---|
-| Location (fine) | GPS speed |
-| Location (always/"all the time") | Starting the service from the background (QS tile) — Android refuses background location-foreground-service starts without it |
-| Notifications (Android 13+) | Required for the foreground service notification |
-| Battery-optimization exemption | ColorOS/MIUI kill background services aggressively; whitelisting makes it reliable |
+| Fine location | GPS speed and displacement |
+| Background location | Locked-screen and Quick Settings operation |
+| Notifications | Visible foreground-service notification on Android 13+ |
+| Modify audio settings | Adjusts the `STREAM_MUSIC` volume |
+| Battery optimization exemption | Prevents OEM/Doze termination where supported |
+| Step detector hardware | Optional walking/running fallback; no permission is required |
 
-The app requests each on first use; grant "**Allow all the time**" for
-location or the tile won't start the service from the background.
+## Quick Settings tile
 
-### Quick Settings tile (one-time)
-
-Long-press a tile slot in the notification shade edit grid and pick
-**Speed Volume**, or add via:
-
-```bash
-adb shell cmd statusbar add-tile com.example.speedvolume/com.example.speedvolume.SpeedVolumeTile
-```
-
-### Build & install
-
-No AndroidX/Material dependencies — compiles with any modern AGP. The wrapper
-pins Gradle 9.2.1 / AGP 9.0.1 (Java 21).
+Add **Speed Volume** from the notification shade's tile editor. Alternatively,
+on a connected development device:
 
 ```bash
-./gradlew assembleDebug        # APK: app/build/outputs/apk/debug/app-debug.apk
-./gradlew installDebug         # install on a connected device
+adb shell cmd statusbar add-tile \
+  com.example.speedvolume/com.example.speedvolume.SpeedVolumeTile
 ```
 
-Or open in Android Studio and Run. Use a physical device — an emulator has no
-real GPS speed. Then grant location permission and press **Start**.
+The tile starts and stops the service. If required permissions are missing,
+it tells you to open the app and complete setup. Long-pressing the tile opens
+the app.
 
-## In the app
+## Build, test, and install
 
-- **Hero speed readout** — the filtered speed that drives the volume
-- **Status pill** — `fix locked` / `motion sensors` / `looking for fix…` and
-  GPS-toggle + volume-blocked warnings
-- **Mapping settings** — full-volume speed (km/h) and standstill volume,
-  applied live
-- **Stop** — stops the service (or tap the tile, or the notification action)
+The app has no runtime AndroidX, Material, or third-party dependencies. JUnit
+is used for local engine tests. The project uses AGP 9.0.1, Gradle 9.2.1,
+compile SDK 36, and Java 17 source compatibility.
+
+```bash
+./gradlew testDebugUnitTest   # filter and motion-engine tests
+./gradlew lintDebug           # Android static analysis
+./gradlew assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
+./gradlew installDebug        # install on a connected device
+```
+
+Use a physical device for functional testing. An emulator generally does not
+provide realistic GPS speed, sensor cadence, Bluetooth audio, or OEM power
+management.
+
+## In-app controls
+
+- **Full volume above speed**: speed at which the media stream reaches maximum.
+- **Standstill volume level**: minimum volume used at 0–3 km/h.
+- **Status pill**: whether the service is running.
+- **Source row**: GPS fix, motion sensors, or looking for a fix.
+- **Warnings**: GPS disabled, volume changes blocked, or service start failure.
+- **Stop**: stops the foreground service and prevents a sticky restart.
 
 ## Troubleshooting
 
-- **Volume doesn't move** → the "volume changes blocked" warning appears when
-  the ROM silently refuses changes; check ColorOS "set media volume" /
-  device-admin-like restrictions.
-- **Works sometimes, not others** → battery killer. Whitelist the app on first
-  start and don't force-stop it.
-- **Speed stuck at 0 indoors** → GPS needs sky view; the step-sensor fallback
-  covers walking/running without a fix, but vehicles always need real GPS.
-- **Other apps change the volume too** → normal Android behavior (navigation,
-  calls); the volume adjusted is the same `STREAM_MUSIC` stream that car
-  Bluetooth uses.
+### It works only while the app is open
+
+Check **Allow all the time**, notifications, unrestricted battery usage, and
+the manufacturer's auto-start/background setting. Start the service while the
+app is visible and verify the persistent notification before locking.
+
+### It stops when the phone locks
+
+The service may have been killed by Doze or an OEM task killer. Re-enable
+unrestricted battery usage and auto-start. Do not force-stop the app; Android
+does not reliably restart force-stopped applications.
+
+### Speed stays at `--` or zero
+
+Move outdoors and wait for a GPS fix. For walking/running, confirm that the
+phone has a step-detector sensor and that recent steps are being detected. A
+vehicle still requires GPS; motion fallback is intentionally limited to
+pedestrian speeds.
+
+### Volume does not change
+
+The app adjusts the same media stream used by Bluetooth car audio. If the
+warning appears, the ROM may be blocking programmatic media-volume changes.
+Check device-admin, car-mode, audio-policy, or OEM restrictions.
+
+### The tile does nothing
+
+Open the app, grant background location, and try starting from the app once.
+If the tile starts and then immediately becomes inactive, inspect the ongoing
+notification and the device's background-execution settings.
 
 ## Project layout
 
-```
+```text
 app/src/main/java/com/example/speedvolume/
-├── MainActivity.kt          # UI: status, start/stop, mapping settings
-├── SpeedVolumeService.kt    # GPS + sensor fusion → volume foreground service
-├── SpeedFilter.kt           # noise filtering (deadband, spikes, median, EMA)
-├── VolumeRamp.kt            # exponential volume approach + block detection
-├── SensorMotion.kt          # step cadence × self-calibrating stride estimate
-├── SpeedVolumeTile.kt       # Quick Settings tile (start/stop, live subtitle)
-└── ServiceState.kt          # listener-bridged state between service/UI/tile
+├── MainActivity.kt          # setup UI, permissions, and controls
+├── SpeedVolumeService.kt    # foreground service, GPS, sensors, recovery
+├── SpeedFilter.kt           # GPS/displacement filtering
+├── VolumeRamp.kt            # exponential volume approach and block detection
+├── SensorMotion.kt          # cadence and stride calibration
+├── SpeedVolumeTile.kt       # Quick Settings integration
+└── ServiceState.kt          # activity/tile/service state bridge
 
-app/src/main/res/
-├── layout/activity_main.xml # card-based minimal UI (light + dark themes)
-├── values/, values-night/   # colors & platform themes
-├── drawable/                # cards, seekbars, tile & notification icons
-└── mipmap-anydpi-v26/       # adaptive launcher icon
+app/src/test/java/com/example/speedvolume/
+├── SpeedFilterTest.kt       # filter edge cases
+└── SensorMotionTest.kt      # cadence and stale-sensor behavior
 ```
 
-## Version history & reverting
+## Versioning and license
 
-The project is versioned with a tag per release:
+Release history is recorded in [CHANGELOG.md](CHANGELOG.md). Inspect tags with:
 
 ```bash
-git tag          # v1.0 … v1.7
+git tag
 git log --oneline --decorate
 ```
 
-To try a previous version over the working tree:
-
-```bash
-git checkout v1.4 -- .    # restore v1.4 files, keep git history
-./gradlew installDebug
-```
-
-To permanently go back (reflog keeps everything):
-
-```bash
-git revert <commit>   # or: git reset --hard v1.4
-```
-
-Every change is logged in [CHANGELOG.md](CHANGELOG.md).
-
-## License
-
-[MIT](LICENSE) © 2026 Soham Jadhav
+The project is licensed under the [MIT License](LICENSE).

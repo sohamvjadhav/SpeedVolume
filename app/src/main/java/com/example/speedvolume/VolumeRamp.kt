@@ -24,13 +24,21 @@ class VolumeRamp(
     private var running = false
     private var targetProvider: (() -> Int)? = null
     private var mismatches = 0
+    private var lastReported = 0
     private var onBlockedChanged: ((Boolean) -> Unit)? = null
+    private var onVolumeChanged: ((Int) -> Unit)? = null
 
-    fun start(targetProvider: () -> Int, onBlockedChanged: (Boolean) -> Unit) {
+    fun start(
+        targetProvider: () -> Int,
+        onBlockedChanged: (Boolean) -> Unit,
+        onVolumeChanged: (Int) -> Unit = {}
+    ) {
         if (running) return
         running = true
         this.targetProvider = targetProvider
         this.onBlockedChanged = onBlockedChanged
+        this.onVolumeChanged = onVolumeChanged
+        lastReported = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         handler.post(tick)
     }
 
@@ -55,6 +63,10 @@ class VolumeRamp(
                 }
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
                 val after = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                if (after != lastReported) {
+                    lastReported = after
+                    this@VolumeRamp.onVolumeChanged?.invoke(after)
+                }
                 if (after == current) {
                     mismatches++
                     if (mismatches == 10) onBlockedChanged?.invoke(true)

@@ -24,24 +24,33 @@ class SpeedVolumeTile : TileService() {
 
     override fun onClick() {
         if (ServiceState.running) {
+            getSharedPreferences(SpeedVolumeService.PREFS_NAME, MODE_PRIVATE)
+                .edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, false).apply()
             stopService(Intent(this, SpeedVolumeService::class.java))
             return
         }
         val tile = qsTile
         val granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            tile?.subtitle = getString(R.string.tile_permission_hint)
+        val backgroundGranted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q ||
+            checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted || !backgroundGranted) {
+            setSubtitle(getString(R.string.tile_permission_hint))
             tile?.updateTile()
             return
         }
-        tile?.subtitle = getString(R.string.tile_starting)
+        setSubtitle(getString(R.string.tile_starting))
         tile?.updateTile()
         try {
+            getSharedPreferences(SpeedVolumeService.PREFS_NAME, MODE_PRIVATE)
+                .edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, true).apply()
             startForegroundService(Intent(this, SpeedVolumeService::class.java))
         } catch (e: Exception) {
             Log.w("SpeedVolumeTile", "foreground start blocked: $e")
-            tile?.subtitle = getString(R.string.tile_permission_hint)
+            getSharedPreferences(SpeedVolumeService.PREFS_NAME, MODE_PRIVATE)
+                .edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, false).apply()
+            setSubtitle(getString(R.string.tile_permission_hint))
             tile?.updateTile()
         }
     }
@@ -53,7 +62,7 @@ class SpeedVolumeTile : TileService() {
         tile.icon = Icon.createWithResource(
             this, if (running) R.drawable.ic_speed_active else R.drawable.ic_speed_inactive
         )
-        tile.subtitle = if (running) {
+        val subtitle = if (running) {
             val speed = if ((ServiceState.hasFix || ServiceState.speedKmh > 0f) &&
                 !ServiceState.speedKmh.isNaN()
             )
@@ -62,6 +71,13 @@ class SpeedVolumeTile : TileService() {
         } else {
             getString(R.string.tile_off)
         }
+        setSubtitle(subtitle)
         tile.updateTile()
+    }
+
+    private fun setSubtitle(value: String) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            qsTile?.subtitle = value
+        }
     }
 }
