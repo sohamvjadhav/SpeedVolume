@@ -1,8 +1,12 @@
 # Speed Volume
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v1.7-green.svg)](https://github.com/sohamvjadhav/SpeedVolume/releases)
+[![License](https://img.shields.io/github/license/sohamvjadhav/SpeedVolume)](https://github.com/sohamvjadhav/SpeedVolume/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/sohamvjadhav/SpeedVolume)](https://github.com/sohamvjadhav/SpeedVolume/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/sohamvjadhav/SpeedVolume/build.yml)](https://github.com/sohamvjadhav/SpeedVolume/actions)
 [![Platform](https://img.shields.io/badge/Android-8.0%2B-orange.svg)](https://developer.android.com/studio)
+[![Min SDK](https://img.shields.io/badge/minSdk-26-brightgreen)](https://developer.android.com/studio)
+[![Target SDK](https://img.shields.io/badge/targetSdk-36-blue)](https://developer.android.com/studio)
+[![Kotlin](https://img.shields.io/badge/Kotlin-✓-purple)](https://kotlinlang.org)
 
 Android app that reads the device's GPS speed and automatically adjusts media
 volume to match — the faster you go, the louder the music. Built for the car
