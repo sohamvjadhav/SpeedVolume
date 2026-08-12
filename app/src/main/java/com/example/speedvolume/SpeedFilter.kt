@@ -1,6 +1,8 @@
 package com.example.speedvolume
 
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * GPS speed noise filter.
@@ -49,14 +51,14 @@ class SpeedFilter(private val maxAccelMs2: Float = 12f) {
         }
 
         window.addLast(sample)
-        if (window.size > 5) window.removeFirst()
+        if (window.size > 3) window.removeFirst()
         val median = window.sorted()[window.size / 2]
 
         if (!initialized) {
             smoothed = median
             initialized = true
         } else {
-            val alpha = if (confident) 0.45f else 0.25f
+            val alpha = if (confident) 0.6f else 0.35f
             smoothed += alpha * (median - smoothed)
         }
         if (smoothed < 3f) smoothed = 0f

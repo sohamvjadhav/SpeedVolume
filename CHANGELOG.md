@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.7 (2026-08-12)
+- Fix: ~2 s delay in volume response
+  - Volume ramp now approaches the target exponentially (halves the gap every
+    50 ms): large changes settle in ~250 ms instead of crawling one level per
+    100 ms
+  - Speed filter: median window 5 -> 3 samples and stronger smoothing weights
+    (0.6/0.35) so real speed changes pass through in 1-2 s
+  - GPS polling interval 1000 -> 500 ms (fresher fixes, still battery-light)
+- Version bump: 1.7 (8)
+
 ## v1.6 (2026-08-12)
 - Hardware: step-detector sensor fusion for accuracy-first motion tracking
   - GPS remains the authoritative speed source whenever a fix is fresh

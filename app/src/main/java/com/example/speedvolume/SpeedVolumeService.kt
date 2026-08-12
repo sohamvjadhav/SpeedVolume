@@ -141,7 +141,7 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
             return
         }
         try {
-            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
+            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500L, 0f, this)
             updatesRequested = true
             ServiceState.gpsEnabled = true
             ServiceState.changed()
