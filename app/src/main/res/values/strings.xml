@@ -23,6 +23,7 @@
     <string name="gps_label">GPS</string>
     <string name="gps_locked">fix locked</string>
     <string name="gps_looking">looking for fix…</string>
+    <string name="sensor_active">motion sensors</string>
 
     <string name="speed_for_max">Full volume above speed</string>
     <string name="speed_for_max_value_fmt">%1$d km/h</string>

@@ -54,7 +54,9 @@ class SpeedVolumeTile : TileService() {
             this, if (running) R.drawable.ic_speed_active else R.drawable.ic_speed_inactive
         )
         tile.subtitle = if (running) {
-            val speed = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
+            val speed = if ((ServiceState.hasFix || ServiceState.speedKmh > 0f) &&
+                !ServiceState.speedKmh.isNaN()
+            )
                 ServiceState.speedKmh.roundToInt().toString() else getString(R.string.no_fix)
             getString(R.string.tile_running, speed, ServiceState.volume)
         } else {

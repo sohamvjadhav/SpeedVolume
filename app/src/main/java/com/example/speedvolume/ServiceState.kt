@@ -8,6 +8,7 @@ object ServiceState {
     @Volatile var volume: Int = 0
     @Volatile var gpsEnabled: Boolean = true
     @Volatile var hasFix: Boolean = false
+    @Volatile var motionOnly: Boolean = false
     @Volatile var volumeBlocked: Boolean = false
 
     private val listeners = CopyOnWriteArrayList<() -> Unit>()

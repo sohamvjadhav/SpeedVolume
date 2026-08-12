@@ -8,6 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -22,15 +26,19 @@ import android.util.Log
 import kotlin.math.roundToInt
 
 @Suppress("DEPRECATION")
-class SpeedVolumeService : Service(), LocationListener {
+class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
 
     private lateinit var audioManager: AudioManager
     private var locationManager: LocationManager? = null
+    private var sensorManager: SensorManager? = null
+    private var stepSensor: Sensor? = null
 
     private var started = false
     private var updatesRequested = false
 
     private val filter = SpeedFilter()
+    private val motion = SensorMotion()
+    private var stepsAtLastFix = 0L
     private lateinit var ramp: VolumeRamp
     private val handler = Handler(Looper.getMainLooper())
 
@@ -91,6 +99,7 @@ class SpeedVolumeService : Service(), LocationListener {
         ServiceState.changed()
 
         ensureLocationUpdates()
+        ensureSensors()
         ramp.start({ mapSpeedToVolume(ServiceState.speedKmh) }) { blocked ->
             if (ServiceState.volumeBlocked != blocked) {
                 ServiceState.volumeBlocked = blocked
@@ -143,9 +152,51 @@ class SpeedVolumeService : Service(), LocationListener {
         }
     }
 
+    private fun ensureSensors() {
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        sensorManager = sm
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR) ?: return
+        sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+        stepSensor = sensor
+        Log.i(TAG, "step sensor active")
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type != Sensor.TYPE_STEP_DETECTOR) return
+        val now = SystemClock.elapsedRealtime()
+        motion.onStep(now)
+        if (lastFixMs != 0L && now - lastFixMs <= NO_FIX_TIMEOUT_MS) return
+
+        val estimate = motion.speedEstimateKmh(now)
+        if (estimate.isNaN()) return
+        val filtered = filter.process(estimate, Float.NaN, false, now)
+        if (filtered.isNaN() || filtered == ServiceState.speedKmh) return
+        ServiceState.speedKmh = filtered
+        ServiceState.motionOnly = true
+        ServiceState.changed()
+        notificationManager().notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+
     override fun onLocationChanged(location: Location) {
         val now = SystemClock.elapsedRealtime()
-        val derivedKmh = derivedSpeedKmh(location, now)
+        val prev = lastLocation
+        var derivedKmh = Float.NaN
+        if (prev != null && prev.latitude != location.latitude &&
+            prev.longitude != location.longitude
+        ) {
+            val dtSec = (now - lastFixMs) / 1000f
+            if (dtSec in 0.5f..10f) {
+                val distanceM = prev.distanceTo(location)
+                derivedKmh = distanceM / dtSec * 3.6f
+                val stepsDelta = motion.stepsSince(stepsAtLastFix)
+                if (stepsDelta > 0 && derivedKmh in 4f..16f) {
+                    motion.calibrate(distanceM, stepsDelta.toInt())
+                }
+            }
+        }
+        stepsAtLastFix = motion.totalSteps()
         lastLocation = location
         lastFixMs = now
 
@@ -159,17 +210,11 @@ class SpeedVolumeService : Service(), LocationListener {
         if (!ServiceState.hasFix) {
             ServiceState.hasFix = true
         }
+        if (ServiceState.motionOnly) {
+            ServiceState.motionOnly = false
+        }
         ServiceState.changed()
         notificationManager().notify(NOTIFICATION_ID, buildNotification())
-    }
-
-    private fun derivedSpeedKmh(location: Location, nowMs: Long): Float {
-        val prev = lastLocation ?: return Float.NaN
-        if (prev.latitude == location.latitude && prev.longitude == location.longitude) return Float.NaN
-        val dtSec = (nowMs - lastFixMs) / 1000f
-        if (dtSec !in 0.5f..10f) return Float.NaN
-        val distanceM = prev.distanceTo(location)
-        return distanceM / dtSec * 3.6f
     }
 
     /**
@@ -177,7 +222,7 @@ class SpeedVolumeService : Service(), LocationListener {
      * NaN speed (no fix / rejected sample) -> hold the current volume.
      */
     private fun mapSpeedToVolume(speedKmh: Float): Int {
-        if (speedKmh.isNaN() || !ServiceState.hasFix) return currentVolume()
+        if (speedKmh.isNaN() || !ServiceState.hasFix && !ServiceState.motionOnly) return currentVolume()
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val maxSpeed = prefs.getInt(PREF_MAX_SPEED, DEFAULT_MAX_SPEED).coerceAtLeast(10).toFloat()
@@ -222,7 +267,9 @@ class SpeedVolumeService : Service(), LocationListener {
             Intent(this, SpeedVolumeService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        val speedText = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
+        val speedText = if ((ServiceState.hasFix || ServiceState.speedKmh > 0f) &&
+            !ServiceState.speedKmh.isNaN()
+        )
             ServiceState.speedKmh.roundToInt().toString() else getString(R.string.no_fix)
 
         return Notification.Builder(this, CHANNEL_ID)
@@ -242,8 +289,10 @@ class SpeedVolumeService : Service(), LocationListener {
         handler.removeCallbacks(watchdogRunnable)
         ramp.stop()
         locationManager?.removeUpdates(this)
+        stepSensor?.let { sensorManager?.unregisterListener(this, it) }
         ServiceState.running = false
         ServiceState.hasFix = false
+        ServiceState.motionOnly = false
         ServiceState.changed()
         Log.i(TAG, "service stopped")
         super.onDestroy()

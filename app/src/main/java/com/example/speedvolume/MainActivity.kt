@@ -136,13 +136,19 @@ class MainActivity : Activity() {
             statusText.text = getString(R.string.status_running)
             statusDot.background = getDrawable(R.drawable.dot_active)
             toggleButton.setText(R.string.stop)
-            speedValue.text = if (ServiceState.hasFix && !ServiceState.speedKmh.isNaN())
-                getString(R.string.speed_value_fmt, ServiceState.speedKmh.toInt())
-            else getString(R.string.no_fix)
+            speedValue.text = if ((ServiceState.hasFix || ServiceState.speedKmh > 0f) &&
+                    !ServiceState.speedKmh.isNaN()
+                )
+                    getString(R.string.speed_value_fmt, ServiceState.speedKmh.toInt())
+                else getString(R.string.no_fix)
             volumeValue.text = getString(R.string.volume_value_fmt, ServiceState.volume, maxVolume)
             gpsRow.visibility = android.view.View.VISIBLE
             fixState.text = getString(
-                if (ServiceState.hasFix) R.string.gps_locked else R.string.gps_looking
+                when {
+                    ServiceState.motionOnly -> R.string.sensor_active
+                    ServiceState.hasFix -> R.string.gps_locked
+                    else -> R.string.gps_looking
+                }
             )
             gpsWarning.visibility = if (ServiceState.gpsEnabled)
                 android.view.View.GONE else android.view.View.VISIBLE

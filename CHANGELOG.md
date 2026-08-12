@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.6 (2026-08-12)
+- Hardware: step-detector sensor fusion for accuracy-first motion tracking
+  - GPS remains the authoritative speed source whenever a fix is fresh
+  - When GPS has no fix (indoor runs, tunnels, cold start): speed is estimated
+    from step cadence x stride, so the speedometer no longer sits at 0
+  - Stride length self-calibrates against GPS-verified distance (4-16 km/h
+    window), converging on the user's actual gait; estimate capped at 18 km/h
+  - UI pill + tile/notification show the speed whenever it is nonzero and mark
+    the source as "motion sensors" vs "fix locked"
+  - No new permissions required (TYPE_STEP_DETECTOR needs none)
+- Version bump: 1.6 (7)
+
 ## v1.5 (2026-08-12)
 - Fix: speed no longer stuck at 0 while moving
   - Filter now falls back to displacement-derived speed when the GPS fix
