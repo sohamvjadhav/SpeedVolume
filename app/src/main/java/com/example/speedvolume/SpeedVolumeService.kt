@@ -44,6 +44,7 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
 
     private var lastLocation: Location? = null
     private var lastFixMs = 0L
+    private var filterSourceMotion: Boolean? = null
 
     companion object {
         private const val TAG = "SpeedVolumeService"
@@ -53,6 +54,7 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
         const val PREFS_NAME = "speed_volume_settings"
         const val PREF_MAX_SPEED = "max_speed_kmh"
         const val PREF_IDLE_VOLUME = "idle_volume"
+        const val PREF_SERVICE_ENABLED = "service_enabled"
         const val DEFAULT_MAX_SPEED = 80
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val NO_FIX_TIMEOUT_MS = 5_000L
@@ -68,6 +70,15 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             Log.i(TAG, "stop requested")
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_SERVICE_ENABLED, false).apply()
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        if (intent == null && !getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(PREF_SERVICE_ENABLED, false)
+        ) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -86,26 +97,41 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
                 startForeground(NOTIFICATION_ID, notification)
             }
             true
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             Log.w(TAG, "startForeground failed, permission lost: $e")
             started = false
+            getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_SERVICE_ENABLED, false).apply()
+            ServiceState.running = false
+            ServiceState.changed()
             stopSelf()
             return START_NOT_STICKY
         }
         if (!ok) return START_NOT_STICKY
 
         ServiceState.running = true
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(PREF_SERVICE_ENABLED, true).apply()
         ServiceState.volume = currentVolume()
         ServiceState.changed()
 
         ensureLocationUpdates()
         ensureSensors()
-        ramp.start({ mapSpeedToVolume(ServiceState.speedKmh) }) { blocked ->
-            if (ServiceState.volumeBlocked != blocked) {
-                ServiceState.volumeBlocked = blocked
-                ServiceState.changed()
+        ramp.start(
+            targetProvider = { mapSpeedToVolume(ServiceState.speedKmh) },
+            onBlockedChanged = { blocked ->
+                if (ServiceState.volumeBlocked != blocked) {
+                    ServiceState.volumeBlocked = blocked
+                    ServiceState.changed()
+                }
+            },
+            onVolumeChanged = { volume ->
+                if (ServiceState.volume != volume) {
+                    ServiceState.volume = volume
+                    ServiceState.changed()
+                }
             }
-        }
+        )
         handler.post(watchdogRunnable)
         Log.i(TAG, "service started")
         return START_STICKY
@@ -114,25 +140,47 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
     private val watchdogRunnable = object : Runnable {
         override fun run() {
             if (!started) return
-            val lm = locationManager ?: return
-            val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
-            if (gpsOn != ServiceState.gpsEnabled) {
-                ServiceState.gpsEnabled = gpsOn
-                ServiceState.changed()
-                notificationManager().notify(NOTIFICATION_ID, buildNotification())
-            }
-            if (gpsOn && !updatesRequested) ensureLocationUpdates()
+            try {
+                val lm = locationManager
+                if (lm == null) {
+                    ensureLocationUpdates()
+                } else {
+                    val gpsOn = lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
+                    if (gpsOn != ServiceState.gpsEnabled) {
+                        ServiceState.gpsEnabled = gpsOn
+                        ServiceState.changed()
+                        notificationManager().notify(NOTIFICATION_ID, buildNotification())
+                    }
 
-            val noFix = lastFixMs == 0L || SystemClock.elapsedRealtime() - lastFixMs > NO_FIX_TIMEOUT_MS
-            if (noFix != !ServiceState.hasFix) {
-                ServiceState.hasFix = !noFix
-                ServiceState.changed()
+                    val noFix = lastFixMs == 0L ||
+                        SystemClock.elapsedRealtime() - lastFixMs > NO_FIX_TIMEOUT_MS
+                    if (noFix != !ServiceState.hasFix) {
+                        ServiceState.hasFix = !noFix
+                        ServiceState.changed()
+                    }
+
+                    if (gpsOn && (!updatesRequested || noFix)) {
+                        ensureLocationUpdates(force = true)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "watchdog recovery failed: $e")
+                updatesRequested = false
+            } finally {
+                if (started) handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
             }
-            handler.postDelayed(this, WATCHDOG_INTERVAL_MS)
         }
     }
 
-    private fun ensureLocationUpdates() {
+    private fun ensureLocationUpdates(force: Boolean = false) {
+        val fineGranted = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!fineGranted) {
+            updatesRequested = false
+            ServiceState.gpsEnabled = false
+            ServiceState.changed()
+            return
+        }
         val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         locationManager = lm
         if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -141,12 +189,17 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
             return
         }
         try {
+            if (force) {
+                lm.removeUpdates(this)
+                updatesRequested = false
+            }
             lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500L, 0f, this)
             updatesRequested = true
             ServiceState.gpsEnabled = true
             ServiceState.changed()
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             Log.w(TAG, "location permission lost: $e")
+            updatesRequested = false
             ServiceState.gpsEnabled = false
             ServiceState.changed()
         }
@@ -169,6 +222,7 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
 
         val estimate = motion.speedEstimateKmh(now)
         if (estimate.isNaN()) return
+        resetFilterIfSourceChanged(motionSource = true)
         val filtered = filter.process(estimate, Float.NaN, false, now)
         if (filtered.isNaN() || filtered == ServiceState.speedKmh) return
         ServiceState.speedKmh = filtered
@@ -203,6 +257,7 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
         val rawKmh = if (location.hasSpeed()) location.speed * 3.6f else Float.NaN
         val confident = location.hasSpeed() && location.accuracy > 0f && location.accuracy <= 40f
 
+        resetFilterIfSourceChanged(motionSource = false)
         val filtered = filter.process(rawKmh, derivedKmh, confident, now)
         if (filtered.isNaN().not()) {
             ServiceState.speedKmh = filtered
@@ -243,6 +298,13 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
 
     private fun currentVolume(): Int =
         audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+
+    private fun resetFilterIfSourceChanged(motionSource: Boolean) {
+        if (filterSourceMotion != motionSource) {
+            filter.reset()
+            filterSourceMotion = motionSource
+        }
+    }
 
     private fun notificationManager(): NotificationManager =
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -291,8 +353,14 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
         locationManager?.removeUpdates(this)
         stepSensor?.let { sensorManager?.unregisterListener(this, it) }
         ServiceState.running = false
+        ServiceState.speedKmh = Float.NaN
+        ServiceState.volume = currentVolume()
         ServiceState.hasFix = false
         ServiceState.motionOnly = false
+        ServiceState.volumeBlocked = false
+        ServiceState.gpsEnabled = true
+        filterSourceMotion = null
+        filter.reset()
         ServiceState.changed()
         Log.i(TAG, "service stopped")
         super.onDestroy()

@@ -171,10 +171,10 @@ class MainActivity : Activity() {
 
     private fun onToggle() {
         if (ServiceState.running) {
+            prefs.edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, false).apply()
             stopService(Intent(this, SpeedVolumeService::class.java))
             refreshUi()
         } else {
-            maybeAskIgnoreBatteryOptimizations()
             val needed = permissionList()
             if (needed.isEmpty()) {
                 startVolumeService()
@@ -208,21 +208,37 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_PERMISSIONS) return
-        val granted = grantResults.any { it == PackageManager.PERMISSION_GRANTED }
-        if (granted) startVolumeService()
-        else statusText.text = getString(R.string.status_permission_denied)
+        val remaining = permissionList()
+        if (remaining.isEmpty()) {
+            startVolumeService()
+        } else if (permissions.indices.any { index ->
+                grantResults[index] == PackageManager.PERMISSION_GRANTED &&
+                    permissions[index] !in remaining
+            }) {
+            // Foreground location, background location, and notifications are
+            // separate Android permission steps. Continue only after progress.
+            requestPermissions(remaining.toTypedArray(), REQUEST_PERMISSIONS)
+        } else {
+            statusText.text = getString(R.string.status_permission_denied)
+        }
     }
 
     private fun permissionList(): List<String> {
         val fineGranted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
         val needed = mutableListOf<String>()
-        if (!fineGranted) needed += Manifest.permission.ACCESS_FINE_LOCATION
-        if (fineGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        if (!fineGranted) {
+            // Android requires foreground location to be granted before the
+            // separate "all the time" background-location step.
+            needed += Manifest.permission.ACCESS_FINE_LOCATION
+            return needed
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) !=
             PackageManager.PERMISSION_GRANTED
         ) {
             needed += Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            return needed
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
@@ -234,8 +250,17 @@ class MainActivity : Activity() {
     }
 
     private fun startVolumeService() {
-        startForegroundService(Intent(this, SpeedVolumeService::class.java))
-        refreshUi()
+        try {
+            prefs.edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, true).apply()
+            startForegroundService(Intent(this, SpeedVolumeService::class.java))
+            // Do this after the service launch. Opening Settings first can
+            // make the launch look background-originated to OEM restrictions.
+            maybeAskIgnoreBatteryOptimizations()
+            refreshUi()
+        } catch (e: Exception) {
+            prefs.edit().putBoolean(SpeedVolumeService.PREF_SERVICE_ENABLED, false).apply()
+            statusText.text = getString(R.string.status_start_failed)
+        }
     }
 
     companion object {
