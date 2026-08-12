@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.5 (2026-08-12)
+- Fix: speed no longer stuck at 0 while moving
+  - Filter now falls back to displacement-derived speed when the GPS fix
+    carries no speed value (common in background/low-power mode on ColorOS)
+  - Snap-to-zero reduced 5 -> 3 km/h so starts register faster
+  - EMA smoothing sped up (0.45 confident / 0.25 weak; accuracy bar 25 -> 40 m)
+- Fix: volume scaled too slowly
+  - Mapping now uses a sqrt curve with default max speed 120 -> 80 km/h, so
+    everyday speeds (30-80 km/h) push volume up quickly
+  - Volume ramp step 200 -> 100 ms
+- Version bump: 1.5 (6)
+
 ## v1.4 (2026-08-11)
 - Fix: QS tile now starts the service instantly from the background
   - Added ACCESS_BACKGROUND_LOCATION: the system refuses to start a location

@@ -45,7 +45,7 @@ class SpeedVolumeService : Service(), LocationListener {
         const val PREFS_NAME = "speed_volume_settings"
         const val PREF_MAX_SPEED = "max_speed_kmh"
         const val PREF_IDLE_VOLUME = "idle_volume"
-        const val DEFAULT_MAX_SPEED = 120
+        const val DEFAULT_MAX_SPEED = 80
         private const val WATCHDOG_INTERVAL_MS = 15_000L
         private const val NO_FIX_TIMEOUT_MS = 5_000L
     }
@@ -150,7 +150,7 @@ class SpeedVolumeService : Service(), LocationListener {
         lastFixMs = now
 
         val rawKmh = if (location.hasSpeed()) location.speed * 3.6f else Float.NaN
-        val confident = location.hasSpeed() && location.accuracy > 0f && location.accuracy <= 25f
+        val confident = location.hasSpeed() && location.accuracy > 0f && location.accuracy <= 40f
 
         val filtered = filter.process(rawKmh, derivedKmh, confident, now)
         if (filtered.isNaN().not()) {
@@ -189,7 +189,7 @@ class SpeedVolumeService : Service(), LocationListener {
             speedKmh >= maxSpeed -> maxVolume
             speedKmh <= 0f -> idleVolume
             else -> {
-                val ratio = speedKmh / maxSpeed
+                val ratio = kotlin.math.sqrt(speedKmh / maxSpeed)
                 (idleVolume + ratio * (maxVolume - idleVolume)).roundToInt()
                     .coerceIn(idleVolume, maxVolume)
             }

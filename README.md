@@ -14,7 +14,7 @@ continuous location tracking) that listens to the GPS provider, converts
 `AudioManager.setStreamVolume(STREAM_MUSIC)`. The mapping is configurable:
 
 - **Full volume above speed** — speed (km/h) at which volume reaches max
-  (default 120)
+  (default 80)
 - **Standstill volume level** — volume applied while stopped (default 15% of max)
 
 Everything between is interpolated linearly. Settings are shared with the

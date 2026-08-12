@@ -15,7 +15,7 @@ import android.os.Looper
  */
 class VolumeRamp(
     private val audioManager: AudioManager,
-    private val stepIntervalMs: Long = 200L
+    private val stepIntervalMs: Long = 100L
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var running = false

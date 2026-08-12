@@ -31,8 +31,11 @@ class SpeedFilter(private val maxAccelMs2: Float = 12f) {
      * @return filtered speed in km/h, or Float.NaN if the sample was rejected
      */
     fun process(rawKmh: Float, derivedKmh: Float, confident: Boolean, nowMs: Long): Float {
-        if (rawKmh.isNaN()) return Float.NaN
-        val sample = if (rawKmh < 3f) 0f else rawKmh
+        val sample = when {
+            !rawKmh.isNaN() -> if (rawKmh < 3f) 0f else rawKmh
+            !derivedKmh.isNaN() -> derivedKmh
+            else -> return Float.NaN
+        }
 
         val dt = if (lastSampleMs > 0L) (nowMs - lastSampleMs) / 1000f else -1f
 
@@ -53,10 +56,10 @@ class SpeedFilter(private val maxAccelMs2: Float = 12f) {
             smoothed = median
             initialized = true
         } else {
-            val alpha = if (confident) 0.35f else 0.12f
+            val alpha = if (confident) 0.45f else 0.25f
             smoothed += alpha * (median - smoothed)
         }
-        if (smoothed < 5f) smoothed = 0f
+        if (smoothed < 3f) smoothed = 0f
 
         prevValidKmh = sample
         lastSampleMs = nowMs
