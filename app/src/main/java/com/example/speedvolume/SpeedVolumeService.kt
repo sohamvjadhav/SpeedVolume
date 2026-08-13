@@ -114,6 +114,9 @@ class SpeedVolumeService : Service(), LocationListener, SensorEventListener {
             .edit().putBoolean(PREF_SERVICE_ENABLED, true).apply()
         ServiceState.volume = currentVolume()
         ServiceState.changed()
+        // The initial foreground notification is built before service state is
+        // initialized. Refresh it immediately so its volume matches the UI.
+        notificationManager().notify(NOTIFICATION_ID, buildNotification())
 
         ensureLocationUpdates()
         ensureSensors()
